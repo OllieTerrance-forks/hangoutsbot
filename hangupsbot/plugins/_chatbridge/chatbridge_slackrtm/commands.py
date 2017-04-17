@@ -72,6 +72,37 @@ def identify(source, sender, team, query=None, clear=False):
             return "No identity set."
 
 
+def members(source, room):
+    if source == SLACK:
+        team, channel = room
+        try:
+            channel = _resolve_channel(team, channel)
+        except KeyError:
+            return "No such channel <b>{}</b>.".format(room[1])
+    else:
+        hangout = bridge.bot.get_hangups_conversation(room)
+    channels = set()
+    hangouts = set()
+    for sync in bridge.configuration["syncs"]:
+        if ((source == SLACK and sync["channel"] == [team, channel["id"]]) or
+                (source == HANGOUTS and sync["hangout"] == room)):
+            channels.add(tuple(sync["channel"]))
+            hangouts.add(sync["hangout"])
+    if not channels and not hangouts:
+        return "This channel/hangout isn't currently being synced."
+    lines = []
+    for team, channel in channels:
+        channel = bridge.slacks[team].channels[channel]
+        lines.append("<b>#{}</b> ({} Slack):".format(channel["name"], team))
+        for member in channel["members"]:
+            lines.append(bridge.slacks[team].users[member]["name"])
+    for hangout in hangouts:
+        hangout = bridge.bot.get_hangups_conversation(hangout)
+        lines.append("<b>{}</b> (Hangouts):".format(hangout._conversation.name))
+        for member in hangout.users:
+            lines.append(member.full_name)
+    return "\n".join(lines)
+
 def sync(team, channel, hangout):
     """
     Store a new Hangouts<->Slack sync, taking immediate effect.
@@ -144,6 +175,14 @@ def slack_identify(bot, event, *args):
     return identify(HANGOUTS, event.user.id_.chat_id, args[1], **kwargs)
 
 @reply_hangouts
+def slack_members(bot, event, *args):
+    ("""List all Slack and Hangouts members in a synced chat.\nUsage: <b>slack_members <i>hangout</i></b>, """
+     """or just <b>slack_members</b> for the current hangout.""")
+    if len(args) > 1:
+        return "Usage: <b>slack_members <i>channel/hangout</i></b>, or just <b>slack_members</b> for the current hangout."
+    return members(HANGOUTS, args[0] if args else event.conv.id_)
+
+@reply_hangouts
 def slack_sync(bot, event, *args):
     ("""Link a Slack channel to a hangout.\nUsage: <b>slack_sync <i>team</i> <i>channel</i> to <i>hangout</i></b>, """
      """or just <b>slack_sync <i>team</i> <i>channel</i></b> for the current hangout.""")
@@ -176,6 +215,10 @@ def run_slack_command(msg, slack, team):
         else:
             kwargs = {"clear": True}
         return identify(SLACK, msg.user, team, **kwargs)
+    elif name == "members":
+        if not len(args) == 1:
+            return "Usage: <b>members <i>channel</i></b>"
+        return members(SLACK, [team, args[0]])
     elif msg.user in bridge.configuration["teams"][team]["admins"]:
         if name == "sync":
             if not (len(args) == 3 and args[1] == "to"):

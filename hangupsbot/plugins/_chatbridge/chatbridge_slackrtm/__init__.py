@@ -11,7 +11,7 @@ from webbridge import WebFramework
 import plugins
 
 from .core import HANGOUTS, SLACK, SlackWrapper, Identities, Message
-from .commands import set_bridge, run_slack_command, slack_identify, slack_sync, slack_unsync
+from .commands import set_bridge, run_slack_command, slack_identify, slack_members, slack_sync, slack_unsync
 from .parser import from_slack, from_hangups
 from .utils import convert_legacy_config
 
@@ -142,6 +142,12 @@ class BridgeInstance(WebFramework):
             team_channel = sync["channel"]
             if not [team, msg.channel] == team_channel:
                 continue
+            # Update our channel member cache.
+            members = self.slacks[team].channels[msg.channel]["members"]
+            if msg.type in ("channel_join", "group_join") and msg.user not in members:
+                members.append(msg.user)
+            elif msg.type in ("channel_leave", "group_leave") and msg.user in members:
+                members.remove(msg.user)
             if msg.ts in self.slacks[team].messages[msg.channel]:
                 # We originally received this message from the bridge.
                 # Don't relay it back, just remove the original from our cache.
@@ -195,6 +201,6 @@ class BridgeInstance(WebFramework):
 
 def _initialise(bot):
     convert_legacy_config(bot)
-    plugins.register_user_command(["slack_identify"])
+    plugins.register_user_command(["slack_identify", "slack_members"])
     plugins.register_admin_command(["slack_sync", "slack_unsync"])
     set_bridge(BridgeInstance(bot, "slackrtm"))

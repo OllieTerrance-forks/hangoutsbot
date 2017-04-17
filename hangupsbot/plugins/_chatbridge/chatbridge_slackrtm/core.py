@@ -147,8 +147,8 @@ class Message(object):
             self.action = True
             if "url_private_download" in self.msg["file"]:
                 self.file = self.msg["file"]["url_private_download"]
-        elif self.type in ("channel_name", "channel_purpose", "channel_topic", "channel_join", "channel_part",
-                           "group_name", "group_purpose", "group_topic", "group_join", "group_part", "me_message"):
+        elif self.type in ("channel_name", "channel_purpose", "channel_topic", "channel_join", "channel_leave",
+                           "group_name", "group_purpose", "group_topic", "group_join", "group_leave", "me_message"):
             self.action = True
         elif self.type in ("channel_archive", "channel_unarchive", "group_archive", "group_unarchive"):
             logger.warn("Channel is being (un)archived")
