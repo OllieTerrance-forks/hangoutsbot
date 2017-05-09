@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 class BridgeInstance(WebFramework):
+
+    def __init__(self, bot, configkey):
+        meta = {"module": "chatbridge_syncrooms",
+                "module.path": "plugins._chatbridge.chatbridge_syncrooms"}
+        super().__init__(bot, configkey, extra_metadata=meta)
+
     def setup_plugin(self):
         self.plugin_name = "syncroomsBasic"
 
@@ -85,6 +91,16 @@ class BridgeInstance(WebFramework):
                 formatted_message,
                 image_id = image_id,
                 context = { "passthru": event.passthru })
+
+    def get_external_info(self, config):
+        info = {}
+        for conv_id in config["config.json"]["hangouts"]:
+            conv = self.bot.get_hangups_conversation(conv_id)
+            info[conv_id] = {"name": conv._conversation.name,
+                             "users": [{"user_id": user.id_.chat_id,
+                                        "full_name": user.full_name,
+                                        "photo_url": user.photo_url} for user in conv.users]}
+        return info
 
     def start_listening(self, bot):
         """syncrooms do not need any special listeners"""

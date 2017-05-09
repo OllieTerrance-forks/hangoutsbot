@@ -49,6 +49,15 @@ class BridgeInstance(WebFramework):
                  "config.json": {"hangouts": [self.hangout],
                                  "slackrtm": [[self.team, self.channel]]}}]
 
+    def is_same_conversation(self, other):
+        if super().is_same_conversation(other):
+            return True
+        for self_config in self.applicable_configuration():
+            for other_config in other.applicable_configuration():
+                if self_config["config.json"][0]["slackrtm"] == other_config["config.json"][0]["slackrtm"]:
+                    return True
+        return False
+
     def map_external_uid_with_hangups_user(self, source_uid, external_context):
         team, channel = external_context["source_gid"]
         identity = Base.idents[team].get(SLACK, source_uid)

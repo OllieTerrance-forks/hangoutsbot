@@ -59,11 +59,16 @@ class WebFramework:
         self._handler_broadcast = plugins.register_handler(self._broadcast, type="sending", extra_metadata=extra_metadata)
         self._handler_repeat = plugins.register_handler(self._repeat, type="allmessages", extra_metadata=extra_metadata)
 
+        if "webbridge" not in bot.shared:
+            bot.shared["webbridge"] = []
+        bot.shared["webbridge"].append(self)
+
         self.start_listening(bot)
 
     def close(self):
         plugins.deregister_handler(self._handler_broadcast, type="sending")
         plugins.deregister_handler(self._handler_repeat, type="allmessages")
+        bot.shared["webbridge"].remove(self)
 
     def load_configuration(self, configkey):
         self.configuration = self.bot.get_config_option(self.configkey) or []
@@ -310,6 +315,87 @@ class WebFramework:
             formatted_message,
             image_id = image_id,
             context = { "passthru": passthru })
+
+    def get_all_external_info(self, conv_id):
+        all_info = {}
+        for config in self.applicable_configuration(conv_id):
+            info = self.get_external_info(config)
+            if info is NotImplemented:
+                logger.warn("{} doesn't implement get_external_info".format(self.plugin_name))
+            else:
+                logger.debug("Got info for {} synced room(s) from {}".format(len(info), self.plugin_name))
+                all_info.update(info)
+        return all_info
+
+    def get_external_info(self, config):
+        """
+        Subclasses should return a structure containing info on all users across a bridge.
+
+        Users can have these properties:
+        - user_id: public-facing username
+        - full_name: real or display name
+        - photo_url: public URL to a display picture
+        - identity: corresponding Hangouts profile ID, if identified
+
+        Sample return value:
+        {"<external-chat-id>": {"name": "<room-name>",
+                                "users": [{"user_id": "<user-id>",
+                                           "full_name": "<full-name>",
+                                           "photo_url": "<photo-url>"}, ...]},
+         "<external-chat-id>": {...},
+         ...}
+        """
+        return NotImplemented
+
+    def is_same_conversation(self, other):
+        """
+        Subclasses should return True if self and the given bridge are part of the same multi-room
+        conversation.  The default implementation covers matching Hangouts conversation IDs.
+        """
+        for self_config in self.applicable_configuration():
+            for other_config in other.applicable_configuration():
+                if any(hangout in other_config["config.json"]["hangouts"]
+                       for hangout in self_config["config.json"]["hangouts"]):
+                    return True
+        return False
+
+    @classmethod
+    def group_bridges(cls, *bridges):
+        """
+        Given a list of bridge instances, return a list of sets, where each set holds all bridges
+        participating in a single multi-room conversation.
+        """
+        convs = []
+        for lone_bridge in bridges:
+            matches = []
+            # NB: conv is a set of bridges.
+            for conv in convs:
+                if any(bridge.is_same_conversation(lone_bridge) for bridge in conv):
+                    conv.add(lone_bridge)
+                    matches.append(conv)
+            if not matches:
+                # Bridge doesn't appear in any convs, create a new one.
+                convs.append({lone_bridge})
+            elif len(matches) > 1:
+                # Bridge appears in mutliple disconnected convs, merge them.
+                convs = [conv for conv in convs if conv not in matches]
+                convs.append(set().union(*matches))
+        return convs
+
+    @classmethod
+    def find_conv_for_bridge(cls, bridge, *bridges):
+        assert bridge in bridges
+        for conv in cls.group_bridges(*bridges):
+            if bridge in conv:
+                return conv
+
+    @classmethod
+    def find_conv_for_hangout(cls, hangout, *bridges):
+        for conv in cls.group_bridges(*bridges):
+            if any(hangout in config["config.json"]["hangouts"]
+                   for config in bridge.applicable_configuration() for bridge in conv):
+                return conv
+        raise KeyError(hangout)
 
     def map_external_uid_with_hangups_user(self, source_uid, external_context):
         return False
