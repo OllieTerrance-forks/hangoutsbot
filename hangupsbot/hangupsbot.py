@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import appdirs, argparse, asyncio, gettext, logging, logging.config, os, shutil, signal, sys, time
+from concurrent.futures import ThreadPoolExecutor
 
 import hangups
 
@@ -149,6 +150,8 @@ class HangupsBot(object):
         if cookies:
             # Start asyncio event loop
             loop = asyncio.get_event_loop()
+            threads = self.get_config_option("max_threads") or 5
+            loop.set_default_executor(ThreadPoolExecutor(max_workers=threads))
 
             # initialise pluggable framework
             hooks.load(self)
@@ -776,12 +779,15 @@ class HangupsBot(object):
 
             _fc = FakeConversation(self, response[0])
 
-            try:
-                yield from _fc.send_message( response[1],
-                                             image_id = response[2],
-                                             context = context )
-            except hangups.NetworkError as e:
-                logger.exception("CORO_SEND_MESSAGE: error sending {}".format(response[0]))
+            for retry_count in range(3):
+                try:
+                    yield from _fc.send_message( response[1],
+                                                 image_id = response[2],
+                                                 context = context )
+                    break
+                except hangups.NetworkError as e:
+                    logger.exception("CORO_SEND_MESSAGE: error sending {}".format(response[0]))
+                    yield from asyncio.sleep(1)
 
 
     @asyncio.coroutine
